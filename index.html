@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>카드 암기 넛츠 게임</title>
+<style>
+:root{--bg:#f3f4f6;--fg:#111827;--sub:#6b7280;--panel:#fff;--line:#d1d5db;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--gold:#f59e0b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--fg:#f1f5f9;--sub:#94a3b8;--panel:#1e293b;--line:#334155;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--gold:#fbbf24}}
+:root[data-theme="dark"]{--bg:#0f172a;--fg:#f1f5f9;--sub:#94a3b8;--panel:#1e293b;--line:#334155;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--gold:#fbbf24}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:480px;padding:16px}
+h1{font-size:20px;margin:4px 0 2px;text-align:center}
+.sub{color:var(--sub);text-align:center;font-size:13px;margin:0 0 12px}
+.status{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;text-align:center;font-size:15px;min-height:46px;display:flex;align-items:center;justify-content:center}
+.bar{height:6px;background:var(--line);border-radius:3px;margin:10px 0;overflow:hidden}
+.bar i{display:block;height:100%;width:100%;background:var(--accent);transition:width 1s linear}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.comm{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:300px;margin:6px auto 12px}
+.lbl{font-size:12px;color:var(--sub);text-align:center;margin-top:6px}
+.card{aspect-ratio:5/7;perspective:600px;cursor:default;position:relative}
+.in{position:absolute;inset:0;transition:transform .5s;transform-style:preserve-3d}
+.card.down .in{transform:rotateY(180deg)}
+.face,.back{position:absolute;inset:0;border-radius:8px;backface-visibility:hidden;border:2px solid #cbd5e1}
+.face{background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;font-weight:700}
+.face b{font-size:clamp(18px,6vw,28px);line-height:1}
+.face span{font-size:clamp(24px,8vw,38px);line-height:1.1}
+.back{transform:rotateY(180deg);background:repeating-linear-gradient(45deg,#1d4ed8 0 6px,#1e40af 6px 12px);border-color:#fff}
+.card.pick{cursor:pointer}
+.card.sel .in{outline:3px solid var(--accent);outline-offset:2px;border-radius:8px}
+.card.win .face{border-color:var(--ok);box-shadow:0 0 0 3px var(--ok)}
+.card.mine:not(.win) .face{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad)}
+.btns{display:flex;gap:8px;justify-content:center;margin-top:8px}
+button{font:inherit;font-size:15px;padding:11px 20px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+button.main{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.res{margin-top:10px;font-size:14px;line-height:1.5;text-align:center}
+.res b.ok{color:var(--ok)}.res b.bad{color:var(--bad)}
+.legend{display:flex;gap:12px;justify-content:center;font-size:13px;margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>🃏 카드 암기 넛츠 게임</h1>
+<p class="sub">16장을 20초 동안 외운 뒤, 공개되는 3장과 만들어지는 최강 핸드를 찾으세요</p>
+<div class="status" id="status">시작 버튼을 눌러주세요</div>
+<div class="bar"><i id="bar"></i></div>
+<div class="grid" id="grid"></div>
+<div class="lbl" id="commLbl" style="visibility:hidden">공개 카드 (커뮤니티 3장)</div>
+<div class="comm" id="comm"></div>
+<div class="btns">
+<button class="main" id="start">게임 시작</button>
+<button id="skip" style="display:none">바로 가리기</button>
+<button class="main" id="ok" style="display:none" disabled>선택 확인</button>
+</div>
+<div class="res" id="res"></div>
+<div class="legend"><span style="color:var(--fg)">♠ 스페이드</span><span style="color:#dc2626">♥ 하트</span><span style="color:#dc2626">♦ 다이아</span><span style="color:var(--fg)">♣ 클로버</span></div>
+</main>
+<script>
+const SUITS=[{s:'♠',c:'#111111'},{s:'♥',c:'#dc2626'},{s:'♦',c:'#dc2626'},{s:'♣',c:'#111111'}];
+const LAB={11:'J',12:'Q',13:'K',14:'A'};
+const NAMES=['하이카드','원 페어','투 페어','트리플','스트레이트','플러시','풀하우스','포카드','스트레이트 플러시'];
+const $=id=>document.getElementById(id);
+let board,comm,els=[],cEls=[],sel=[],phase='idle',timer,best;
+
+function makeDeck(){const d=[];for(const su of SUITS)for(let r=2;r<=14;r++)d.push({r,l:LAB[r]||String(r),s:su.s,c:su.c});
+for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]]}return d}
+
+function score(cs){
+const rs=cs.map(c=>c.r).sort((a,b)=>b-a);
+const cnt={};rs.forEach(r=>cnt[r]=(cnt[r]||0)+1);
+const g=Object.keys(cnt).map(Number).sort((a,b)=>cnt[b]-cnt[a]||b-a);
+const flush=cs.every(c=>c.s===cs[0].s);
+let str=g.length===5&&rs[0]-rs[4]===4,hi=rs[0];
+if(g.length===5&&rs.join()==='14,5,4,3,2'){str=true;hi=5}
+let cat,tb=g;
+const k=g.map(r=>cnt[r]).join('');
+if(str&&flush){cat=8;tb=[hi]}else if(k==='41'){cat=7}else if(k==='32'){cat=6}else if(flush){cat=5}
+else if(str){cat=4;tb=[hi]}else if(k==='311'){cat=3}else if(k==='221'){cat=2}else if(k==='2111'){cat=1}else cat=0;
+let v=cat;for(let i=0;i<5;i++)v=v*15+(tb[i]||0);
+return{v,cat}}
+
+function cardHTML(c){return `<div class="in"><div class="face" style="color:${c.c}"><b>${c.l}</b><span>${c.s}</span></div><div class="back"></div></div>`}
+function mk(c,up){const d=document.createElement('div');d.className='card'+(up?'':' down');d.innerHTML=cardHTML(c);return d}
+
+function computeBest(){
+let mv=-1,pairs=[],cat=0;
+for(let i=0;i<16;i++)for(let j=i+1;j<16;j++){
+const s=score([...comm,board[i],board[j]]);
+if(s.v>mv){mv=s.v;pairs=[[i,j]];cat=s.cat}else if(s.v===mv)pairs.push([i,j])}
+return{v:mv,pairs,cat}}
+
+function setStatus(t){$('status').innerHTML=t}
+
+function start(){
+clearInterval(timer);
+const d=makeDeck();board=d.slice(0,16);comm=d.slice(16,19);
+best=computeBest();sel=[];phase='memo';
+$('grid').innerHTML='';$('comm').innerHTML='';$('res').innerHTML='';
+els=board.map((c,i)=>{const e=mk(c,true);e.onclick=()=>toggle(i);$('grid').appendChild(e);return e});
+cEls=comm.map(c=>{const e=mk(c,false);$('comm').appendChild(e);return e});
+$('commLbl').style.visibility='hidden';
+$('start').style.display='none';$('skip').style.display='';$('ok').style.display='none';
+let t=20;const bar=$('bar');bar.style.transition='none';bar.style.width='100%';
+requestAnimationFrame(()=>requestAnimationFrame(()=>{bar.style.transition='width 1s linear';bar.style.width=(t-1)/20*100+'%'}));
+setStatus(`암기하세요! 남은 시간 <b>&nbsp;${t}초</b>`);
+timer=setInterval(()=>{t--;if(t<=0){hide();return}
+bar.style.width=(t-1)/20*100+'%';setStatus(`암기하세요! 남은 시간 <b>&nbsp;${t}초</b>`)},1000)}
+
+function hide(){
+clearInterval(timer);if(phase!=='memo')return;
+phase='pick';$('bar').style.width='0%';
+$('skip').style.display='none';$('ok').style.display='';$('ok').disabled=true;
+els.forEach(e=>{e.classList.add('down','pick')});
+setStatus('카드가 가려졌습니다…');
+setTimeout(()=>{
+cEls.forEach((e,i)=>setTimeout(()=>e.classList.remove('down'),i*250));
+$('commLbl').style.visibility='visible';
+setStatus('공개 3장과 합쳐 <b>넛츠(최강 핸드)</b>가 되는 카드 2장을 고르세요')},700)}
+
+function toggle(i){
+if(phase!=='pick')return;
+const k=sel.indexOf(i);
+if(k>=0){sel.splice(k,1);els[i].classList.remove('sel')}
+else{if(sel.length>=2){els[sel.shift()].classList.remove('sel')}sel.push(i);els[i].classList.add('sel')}
+$('ok').disabled=sel.length!==2}
+
+function submit(){
+if(phase!=='pick'||sel.length!==2)return;
+phase='done';
+const mine=score([...comm,board[sel[0]],board[sel[1]]]);
+const win=mine.v===best.v;
+els.forEach(e=>e.classList.remove('down','pick','sel'));
+const wset=new Set(best.pairs.flat());
+els.forEach((e,i)=>{if(wset.has(i))e.classList.add('win')});
+if(!win)sel.forEach(i=>els[i].classList.add('mine'));
+const bp=best.pairs[0].map(i=>board[i].s+board[i].l).join(' + ');
+setStatus(win?'🎉 <b style="color:var(--ok)">승리!</b> 넛츠를 찾았습니다':'😢 <b style="color:var(--bad)">패배</b> 넛츠가 아니에요');
+$('res').innerHTML=`내 선택: <b class="${win?'ok':'bad'}">${NAMES[mine.cat]}</b><br>정답 넛츠: <b>${NAMES[best.cat]}</b> (${bp})<br><span style="color:var(--sub)">초록 테두리 = 넛츠를 만드는 카드${win?'':', 빨강 = 내 선택'}</span>`;
+$('ok').style.display='none';$('start').style.display='';$('start').textContent='다시 하기'}
+
+$('start').onclick=start;$('skip').onclick=hide;$('ok').onclick=submit;
+</script>
+</body>
+</html>
